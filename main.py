@@ -6,8 +6,14 @@ from CLAP import build_audio_encoder, build_mlp
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+import torch.nn.init as init
+from torch.utils.tensorboard import SummaryWriter
 
 import os
+import time
+from tqdm import tqdm
+
+
 class Config:
     def __init__(self, d_model, in_channels, patchsize, layer_list, down_rate, spatial_resolution, window_size, freq_ratio, num_heads, drop_path_rate):
         self.d_model = d_model
@@ -55,29 +61,36 @@ class Clap(nn.Module):
     def __init__(self, aConfig):
         super().__init__()
         #self.clap_amodel = build_audio_encoder(aConfig)
-        self.clap_model = hf_clap.audio_model
+        self.clap_amodel = hf_clap.audio_model
         self.clap_tmodel = hf_clap.text_model
         self.processor = ClapProcessor.from_pretrained("laion/larger_clap_music_and_speech")
         #self.audio_projection = build_mlp(1024, 512, 512)
         self.audio_projection = hf_clap.audio_projection
+        self.projection_head = build_mlp(512, 512, 512)
         self.text_projection = hf_clap.text_projection
     
-    def forward(self, audios, text):
+    
+    def forward(self, audios, labels, device):
         split_audio = torch.unbind(audios, dim=0)
-        audios = [self.preprocess(a) for a in split_audio]
-        audio_ft = torch.stack(audios)
+        audios = [self.processor(audios=a, return_tensors="pt")["input_features"] for a in split_audio]  
+        audio_ft = torch.stack(audios, dim=0).squeeze(2).to(device)
         audio_embd = self.clap_amodel(audio_ft)                                     
-        audio_embd_l = F.normalize(self.audio_projection(audio_embd))               #(b, d)
+        audio_embd_l = self.audio_projection(audio_embd.pooler_output)             #(b, d)
+        audio_embd_l = F.normalize(self.projection_head(audio_embd_l))
         b , d = audio_embd_l.shape
 
-        text_t = self.processor(text=text, return_tensors="pt", padding=True)
-        text_embd = self.clap_tmodel(text_t)                                       
-        text_embd_l = F.normalize(self.text_projection(text_embd))                  #(b, d)
+        text = []
+        for label in labels:
+            text.append("Music composed by " + str(label))
+        text_t = self.processor(text=text, return_tensors="pt", padding=True).to(device)
+        text_t.to(device)
+        text_embd = self.clap_tmodel(**text_t)                                       
+        text_embd_l = F.normalize(self.text_projection(text_embd.pooler_output))                  #(b, d)
 
-        logits = audio_embd_l @ text_embd_l                                         #(b ,b)
-        labels = torch.arange(b)
-        loss_a = nn.CrossEntropyLoss(logits, labels)
-        loss_t = nn.CrossEntropyLoss(logits, labels)
+        logits = audio_embd_l @ text_embd_l.T                                          #(b ,b)
+        labels = torch.arange(b).to(logits.device)
+        loss_a = nn.CrossEntropyLoss()(logits, labels)
+        loss_t = nn.CrossEntropyLoss()(logits.T, labels)
         loss = (loss_a + loss_t) / 2 
 
         return loss, logits
@@ -162,20 +175,28 @@ audio_projection.load_state_dict(hf_clap.audio_projection.state_dict())
 from Dataloader import AudioChunkDatasetFromCSV
 from torch.utils.data import DataLoader
 import gc
+import warnings
 
+warnings.filterwarnings("ignore", message=".*sampling_rate*")
 
-
+#====================================================configuration=============================================================#
+epochs = 50
+resume = False
+checkpoint_path = None
+device = "mps"
+checkpoint_dir = "/Users/eddy/Documents/Build_from_scratch/AudioLDM/checkpoint_clap"
+batchsize = 4
 #--------------------------------------------------------preparing dataset------------------------------------------------------------#
 csv_file = "/Users/eddy/Desktop/maestro-v1.0.0/maestro-v1.0.0.csv" 
 audio_directory = "/Users/eddy/Desktop/maestro-v1.0.0"
 
 train_dataset = AudioChunkDatasetFromCSV(csv_file=csv_file, audio_directory=audio_directory, split="train", chunk_duration=10, sample_rate=16000)
-train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
 len_train = train_dataset.__len__()
 #
 # Test dataset
 test_dataset = AudioChunkDatasetFromCSV(csv_file=csv_file, audio_directory=audio_directory, split="test", chunk_duration=10, sample_rate=16000)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
+test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 len_test = test_dataset.__len__()
 label_list = test_dataset.get_unique_labels()
 
@@ -186,79 +207,82 @@ for label in label_list:
 
 #===============================================================evaluate====================================================================#
 
-def evaluate(model, dataset, processor):
-    count = 0
-    total = 0
 
-    for audio, label in dataset:
+def evaluate():
+    for audio, label in test_dataloader:
         audio = processor(audios = audio.flatten(0), return_tensors="pt")
         audio_embd = hf_clap.get_audio_features(**audio)
         text = prompt_list
         text = processor(text, return_tensors="pt", padding=True)
         text_embd = hf_clap.get_text_features(**text)
-
         logits = audio_embd @ text_embd.T
         idx = torch.argmax(logits, dim=1)
-        if label == prompt_list[idx]:
-            count += 1
+        #if label == prompt_list[idx]:
+        #    count += 1
         print(f"logits: {logits}, label: {label}, predict label: {prompt_list[idx]}")
-        gc.collect()
-        total += 1
 
-    accuracy = count / total
-    print("test accuracy:", accuracy)
-    return accuracy
 
 #========================================================training configration====================================================#
 clap_model = Clap(aConfig)
 clap_model.train()
-optimizer = torch.optim.AdamW(clap_model.parameters(), lr = 1e-5)
-epochs = 50
-resume = False
-checkpoint_path = None
-device = "mps"
-checkpoint_dir = ""
+optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, clap_model.parameters()), lr=1e-4)
+writer = SummaryWriter()
 
-for name, param in clap_model.named_parameters():
-    if "audio_projection" not in name:
-        param.requires_grad = False  # Freeze the layer
-    else:
-        param.requires_grad = True
+def train_clap(model, dataloader, optimizer, device, resume = False):
+    for name, param in model.named_parameters():
+        if "audio_projection" in name or "projection_head" in name:
+            param.requires_grad = True
+            print("params requires grad:", name)
+        else:
+            param.requires_grad = False
 
-if resume == True:
-    assert checkpoint_path is not None, "checkpoint can not be emtpy when resume training"
-    checkpoint = torch.load(checkpoint_path)
-    clap_model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch_start = checkpoint['epoch']
-    loss = checkpoint['loss']
-
-for epoch in range(epochs):
     if resume == True:
-        epoch += epoch_start
+        assert checkpoint_path is not None, "checkpoint can not be emtpy when resume training"
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch_start = checkpoint['epoch']
+        loss = checkpoint['loss']
+    else:
+        epoch_start = 0
 
-    count_sample = 0
-    for audio, label in train_dataloader:
-        count_sample += 1
-        print(f"epochs {epoch}, {count_sample}/{len_train} samples, loss: {loss}")
-        optimizer.zero_grad()
-        loss, logits = hf_clap(audio, label)
-        loss.backward()
-        optimizer.step()
+    model.to(device)
+
+    for epoch in range(epoch_start, epochs):
+        if resume == True:
+            epoch += epoch_start
+        epoch_start_time = time.time()
+
+        count_sample = 0
+        for audios, labels in tqdm(dataloader, desc=f"Epoch {epoch}/{epochs - 1}"):
+            batch_start_time = time.time()
+            count_sample += 1
+            optimizer.zero_grad()
+            loss, logits = model(audios, labels, device)
+            loss.backward()
+            optimizer.step()
+            print(f"epochs {epoch}, {count_sample}/{(len_train // batchsize) + 1} samples, loss: {loss}")
+            batch_end_time = time.time()
+            batch_time = batch_end_time - batch_start_time
+            print(f"estimate epoch time:{batch_time * (((len_train // batchsize) + 1) - count_sample):.2f} s.")
+
+        if (epoch + 1) % 10 == 0:
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            checkpoint_path = os.path.join(checkpoint_dir, f"clap_model_test_epoch_{epoch}.pth")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+            }, checkpoint_path)
+            print(f"Checkpoint saved: {checkpoint_path}")
+
+        epoch_end_time = time.time()
+        print("epochs time:", epoch_end_time - epoch_start_time)
+        writer.add_scalar('Loss/train', loss.item(), epoch)
     
-    if (epoch + 1) % 10 == 0:
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch}.pth")
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': clap_model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': loss,
-        }, checkpoint_path)
-        print(f"Checkpoint saved: {checkpoint_path}")
+    writer.close()
 
-    if epoch == epochs - 1:                                 #condition for resume training
-        break
-    gc.collect()
 
+train_clap(clap_model, train_dataloader, optimizer, device)
 

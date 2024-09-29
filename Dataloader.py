@@ -65,6 +65,18 @@ class AudioChunkDatasetFromCSV(Dataset):
             audio, sample_rate = torchaudio.load(file_path)
             total_chunks += audio.shape[1] // self.chunk_length  # Total chunks per file
         return total_chunks
+    #def __len__(self):
+    #    # Return total number of chunks but limit to max_chunks
+    #    total_chunks = 0
+    #    for file_name in self.file_names:
+    #        file_path = os.path.join(self.audio_directory, file_name)
+    #        audio, _ = torchaudio.load(file_path)
+    #        num_chunks = audio.shape[1] // self.chunk_length
+    #        total_chunks += num_chunks
+    #        if total_chunks >= 50:
+    #            return 50
+    #    return min(total_chunks, 50)
+#
 
     def __getitem__(self, idx):
         cumulative_chunks = 0
@@ -96,4 +108,5 @@ class AudioChunkDatasetFromCSV(Dataset):
 # Create the dataset and dataloader
 #dataset = AudioChunkDatasetFromCSV(csv_file=csv_file, audio_directory=audio_directory, chunk_duration=10, sample_rate=16000)
 #dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
 

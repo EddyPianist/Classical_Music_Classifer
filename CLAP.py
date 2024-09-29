@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
+import torch.nn.init as init
 
 class ClapDropPath(nn.Module):
     """
@@ -37,6 +38,13 @@ class mlp(nn.Module):
         self.linear1 = nn.Linear(input_dim, latent_dim)
         self.linear2 = nn.Linear(latent_dim, output_dim)
         self.relu = nn.ReLU()
+        self.__initialization__()
+
+    def __initialization__(self):
+        init.kaiming_uniform_(self.linear1.weight)
+        init.zeros_(self.linear1.bias)
+        init.kaiming_uniform_(self.linear2.weight)
+        init.zeros_(self.linear2.bias)
     
     def forward(self, x):
         x = self.linear1(x)
