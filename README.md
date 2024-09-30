@@ -10,7 +10,7 @@ We used the MAESTRO dataset, which contains a rich collection of classical piano
 ### Model architecture
 Our model is consists of an audio encoder and a text encoder which is the same as CLAP model. The overall architecture is shown in Fig.1,  we selected Roberta and HTS-AT for best performace, aligning with the findings of the original CLAP model paper. 
 
-![Fig.1 Overall architecture](<.images/Screenshot 2024-09-30 at 10.44.46 AM.png>)
+![Fig.1 Overall architecture](<images/Screenshot 2024-09-30 at 10.44.46 AM.png>)
 
 And we reimplement the audio encoder for practice purpose and reload the pretrained params from hugging face. Besides, an additional mlp layer is added to the end of audio encoder for fine-tuning. These encoders help capture rich features from the audio clips, facilitating improved performance for classical music classification. 
 
@@ -37,6 +37,6 @@ pip install -r requirements.txt
 
 Codes are partly borrowed from:
 * [CLAP] (https://github.com/LAION-AI/CLAP)
-* [Hugging face: CLAP](https://huggingface.co/laion/larger_clap_music_and_speech)
+* [Huggingface:CLAP] (https://huggingface.co/laion/larger_clap_music_and_speech)
 
 
