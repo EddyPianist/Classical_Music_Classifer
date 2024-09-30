@@ -1,10 +1,14 @@
-# Project Title
+# Classical Music Classifier
 
-Simple overview of use/purpose.
+The Classical Music Classifier is an AI-based model designed to classify classical music via its composer, fine-tuned on the MAESTRO dataset. While the CLAP (Contrastive Language-Audio Pretraining) model, which serves as the foundation for this classifier, achieves state-of-the-art performance across various general audio classification tasks, it struggles with more specific genres like classical music. Our classifier addresses this gap by being fine-tuned specifically for classical piano works.
 
 ## Description
 
-An in-depth paragraph about your project and overview of use.
+### Dataset
+We used the MAESTRO dataset, which contains a rich collection of classical piano music from various composers and periods. The dataset is challenging due to the varying lengths of the audio files. To standardize input for training, we split the audio files into 10-second clips, discarding any clips shorter than 10 seconds as they often lack sufficient information for effective classification.
+
+### Model architecture
+Our model is consists of an audio encoder and a text encoder which is the same as CLAP model. The overall architecture is shown in Fig.1,  we selected Roberta and HTS-AT for best performace, aligning with the findings of the original CLAP model paper. And we reimplement the audio encoder for practice purpose and reload the pretrained params from hugging face. Besides, an additional mlp layer is added to the end of audio encoder for fine-tuning. These encoders help capture rich features from the audio clips, facilitating improved performance for classical music classification. 
 
 ## Getting Started
 
