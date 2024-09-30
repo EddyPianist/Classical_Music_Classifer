@@ -5,62 +5,38 @@ The Classical Music Classifier is an AI-based model designed to classify classic
 ## Description
 
 ### Dataset
-We used the MAESTRO dataset, which contains a rich collection of classical piano music from various composers and periods. The dataset is challenging due to the varying lengths of the audio files. To standardize input for training, we split the audio files into 10-second clips, discarding any clips shorter than 10 seconds as they often lack sufficient information for effective classification.
+We used the MAESTRO dataset, which contains a rich collection of classical piano music from various composers and periods. The dataset is challenging due to the varying lengths of the audio files. To standardize input for training, we split the audio files into 10-second clips, discarding any clips shorter than 10 seconds as they often lack sufficient information for effective classification. Additionally, the dataset includes repeated pieces of music, with some appearing more than eight times. Although these versions are performed by different musicians, the repetition could introduce bias during training. To mitigate this, we limit each piece to a maximum of three occurrences in the dataset. 
 
 ### Model architecture
-Our model is consists of an audio encoder and a text encoder which is the same as CLAP model. The overall architecture is shown in Fig.1,  we selected Roberta and HTS-AT for best performace, aligning with the findings of the original CLAP model paper. And we reimplement the audio encoder for practice purpose and reload the pretrained params from hugging face. Besides, an additional mlp layer is added to the end of audio encoder for fine-tuning. These encoders help capture rich features from the audio clips, facilitating improved performance for classical music classification. 
+Our model is consists of an audio encoder and a text encoder which is the same as CLAP model. The overall architecture is shown in Fig.1,  we selected Roberta and HTS-AT for best performace, aligning with the findings of the original CLAP model paper. 
+
+![Fig.1 Overall architecture](<.images/Screenshot 2024-09-30 at 10.44.46 AM.png>)
+
+And we reimplement the audio encoder for practice purpose and reload the pretrained params from hugging face. Besides, an additional mlp layer is added to the end of audio encoder for fine-tuning. These encoders help capture rich features from the audio clips, facilitating improved performance for classical music classification. 
 
 ## Getting Started
 
 ### Dependencies
 
-* Describe any prerequisites, libraries, OS version, etc., needed before installing program.
-* ex. Windows 10
+* Install all the dependencies:
+```
+pip install -r requirements.txt
+```
 
-### Installing
+* Install newest version of pytorch at: https://pytorch.org
 
-* How/where to download your program
-* Any modifications needed to be made to files/folders
 
 ### Executing program
 
-* How to run the program
-* Step-by-step bullets
-```
-code blocks for commands
-```
+* Firstly you should download the MAESTRO dataset from: https://magenta.tensorflow.org/datasets/maestro
+* Preprocess the dataset following Dataset section in the Description above. 
+* Then you can train your own model with main.py! Note that we use absolute dir in main.py, so you may change the dir to your own path. 
 
-## Help
-
-Any advise for common problems or issues.
-```
-command to run if program contains helper info
-```
-
-## Authors
-
-Contributors names and contact info
-
-ex. Dominique Pizzie  
-ex. [@DomPizzie](https://twitter.com/dompizzie)
-
-## Version History
-
-* 0.2
-    * Various bug fixes and optimizations
-    * See [commit change]() or See [release history]()
-* 0.1
-    * Initial Release
-
-## License
-
-This project is licensed under the [NAME HERE] License - see the LICENSE.md file for details
 
 ## Acknowledgments
 
-Inspiration, code snippets, etc.
-* [awesome-readme](https://github.com/matiassingers/awesome-readme)
-* [PurpleBooth](https://gist.github.com/PurpleBooth/109311bb0361f32d87a2)
-* [dbader](https://github.com/dbader/readme-template)
-* [zenorocha](https://gist.github.com/zenorocha/4526327)
-* [fvcproductions](https://gist.github.com/fvcproductions/1bfc2d4aecb01a834b46)
+Codes are partly borrowed from:
+* [CLAP] (https://github.com/LAION-AI/CLAP)
+* [Hugging face: CLAP](https://huggingface.co/laion/larger_clap_music_and_speech)
+
+
